@@ -2,42 +2,38 @@ from flask import Flask, request, send_file
 from flask_cors import CORS
 import cv2
 import numpy as np
-import tempfile
+from PIL import Image
+import io
 
 app = Flask(__name__)
-CORS(app)  # 👈 VERY IMPORTANT for frontend connection
+CORS(app)  # Enable CORS for all domains
 
-@app.route('/scan', methods=['POST'])
+@app.route("/scan", methods=["POST"])
 def scan():
-    file = request.files['image']
-    img = cv2.imdecode(np.frombuffer(file.read(), np.uint8), cv2.IMREAD_COLOR)
+    if "image" not in request.files:
+        return "No image uploaded", 400
 
+    file = request.files["image"]
+    img_bytes = file.read()
+
+    # Read image with OpenCV
+    np_img = np.frombuffer(img_bytes, np.uint8)
+    img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+
+    # Simple enhancement example: convert to grayscale + adaptive threshold
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5,5), 0)
-    edges = cv2.Canny(blur, 75, 200)
+    enhanced = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                     cv2.THRESH_BINARY, 11, 2)
 
-    contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    # Convert back to image bytes
+    pil_img = Image.fromarray(enhanced)
+    buf = io.BytesIO()
+    pil_img.save(buf, format="JPEG")
+    buf.seek(0)
 
-    doc = None
-    for c in contours:
-        peri = cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-        if len(approx) == 4:
-            doc = approx
-            break
-
-    mask = np.zeros(gray.shape, dtype="uint8")
-    if doc is not None:
-        cv2.drawContours(mask, [doc], -1, 255, -1)
-
-    result = cv2.bitwise_and(img, img, mask=mask)
-    enhanced = cv2.detailEnhance(result, sigma_s=10, sigma_r=0.15)
-
-    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-    cv2.imwrite(temp.name, enhanced)
-
-    return send_file(temp.name, mimetype='image/jpeg')
+    return send_file(buf, mimetype="image/jpeg")
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
