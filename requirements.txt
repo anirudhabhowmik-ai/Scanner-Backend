@@ -1,5 +1,5 @@
 Flask==2.3.2
-numpy==2.3.5
+numpy==1.26.5
 opencv-python-headless==4.8.1.78
 Pillow==10.0.0
 flask-cors==3.0.10
