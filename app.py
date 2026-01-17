@@ -26,20 +26,63 @@ def scan_and_convert():
     # Convert image bytes → OpenCV
     np_img = np.frombuffer(img_bytes, np.uint8)
     img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
-
     if img is None:
         return jsonify({"error": "Invalid image"}), 400
 
-    # ---- Image enhancement (scanner effect)
+    # ---- Document detection + enhancement
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    enhanced = cv2.adaptiveThreshold(
-        gray,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        11,
-        2
-    )
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    edged = cv2.Canny(blur, 75, 200)
+
+    contours, _ = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:5]
+
+    doc_contour = None
+    for c in contours:
+        peri = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+        if len(approx) == 4:
+            doc_contour = approx
+            break
+
+    if doc_contour is not None:
+        pts = doc_contour.reshape(4, 2)
+        rect = np.zeros((4, 2), dtype="float32")
+        s = pts.sum(axis=1)
+        rect[0] = pts[np.argmin(s)]
+        rect[2] = pts[np.argmax(s)]
+        diff = np.diff(pts, axis=1)
+        rect[1] = pts[np.argmin(diff)]
+        rect[3] = pts[np.argmax(diff)]
+
+        (tl, tr, br, bl) = rect
+        widthA = np.linalg.norm(br - bl)
+        widthB = np.linalg.norm(tr - tl)
+        maxWidth = max(int(widthA), int(widthB))
+        heightA = np.linalg.norm(tr - br)
+        heightB = np.linalg.norm(tl - bl)
+        maxHeight = max(int(heightA), int(heightB))
+
+        dst = np.array([
+            [0, 0],
+            [maxWidth - 1, 0],
+            [maxWidth - 1, maxHeight - 1],
+            [0, maxHeight - 1]
+        ], dtype="float32")
+
+        M = cv2.getPerspectiveTransform(rect, dst)
+        warped = cv2.warpPerspective(img, M, (maxWidth, maxHeight))
+
+        gray_warped = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
+        enhanced = cv2.adaptiveThreshold(
+            gray_warped, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, 11, 2
+        )
+    else:
+        enhanced = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, 11, 2
+        )
 
     pil_img = Image.fromarray(enhanced)
     output = io.BytesIO()
@@ -51,25 +94,16 @@ def scan_and_convert():
         pil_img.save(output, format="JPEG", quality=95)
         mimetype = "image/jpeg"
         filename = "scanned.jpg"
-
     elif output_format == "pdf":
         pil_img = pil_img.convert("RGB")
         pil_img.save(output, format="PDF", resolution=300.0)
         mimetype = "application/pdf"
         filename = "scanned.pdf"
-
     else:
         return jsonify({"error": "Unsupported format"}), 400
 
     output.seek(0)
-
-    return send_file(
-        output,
-        mimetype=mimetype,
-        as_attachment=True,
-        download_name=filename
-    )
-
+    return send_file(output, mimetype=mimetype, as_attachment=True, download_name=filename)
 
 # =========================
 # MERGE PDFs
@@ -80,12 +114,10 @@ def merge_pdfs():
         return jsonify({"error": "No PDF files uploaded"}), 400
 
     pdf_files = request.files.getlist("files")
-
     if len(pdf_files) < 2:
         return jsonify({"error": "Upload at least two PDFs"}), 400
 
     merger = PdfMerger()
-
     try:
         for pdf in pdf_files:
             if not pdf.filename.lower().endswith(".pdf"):
@@ -103,10 +135,8 @@ def merge_pdfs():
             as_attachment=True,
             download_name="merged.pdf"
         )
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 # =========================
 # HEALTH CHECK
@@ -117,7 +147,6 @@ def health():
         "status": "PDFMaster backend running",
         "endpoints": ["/scan", "/merge-pdf"]
     })
-
 
 # =========================
 # START SERVER
