@@ -2,7 +2,7 @@ Backend Deployment
 https://railway.com/project
 
 Frontend Deployment
-https://app.netlify.com/teams/anirudhabhowmik-ai/projects
+https://vercel.com
 
 Create Virtual Environment
 py -3.11 -m venv venv
