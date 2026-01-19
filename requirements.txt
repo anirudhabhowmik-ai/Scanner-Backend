@@ -9,8 +9,8 @@ pypdf==3.16.0
 reportlab==4.4.9
 
 pytesseract==0.3.10
+python-doctr>=0.8.1
 
-# Use CPU-only versions to reduce download size
+--find-links https://download.pytorch.org/whl/cpu/torch_stable.html
 torch==2.1.0+cpu
 torchvision==0.16.0+cpu
-python-doctr==0.8.1
