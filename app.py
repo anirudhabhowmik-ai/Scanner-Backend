@@ -4,6 +4,7 @@ from routes.scan_document import scan_doc_bp
 from routes.merge_pdf import merge_pdf_bp
 from routes.ocr import ocr_bp
 from routes.split import split_pdf_bp
+from routes.compress import compress_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -13,6 +14,7 @@ app.register_blueprint(scan_doc_bp)
 app.register_blueprint(merge_pdf_bp)
 app.register_blueprint(ocr_bp)
 app.register_blueprint(split_pdf_bp)
+app.register_blueprint(compress_bp)
 
 @app.route("/", methods=["GET"])
 def health():
