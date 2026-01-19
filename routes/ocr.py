@@ -7,6 +7,7 @@ import platform
 import os
 import subprocess
 
+
 ocr_bp = Blueprint("ocr", __name__)
 
 # Tesseract configuration for different environments
