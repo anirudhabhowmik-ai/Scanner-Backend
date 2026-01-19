@@ -5,8 +5,9 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies
+# Install system dependencies (IMPORTANT)
 RUN apt-get update && apt-get install -y \
+    ghostscript \
     tesseract-ocr \
     libtesseract-dev \
     libgl1 \
@@ -24,8 +25,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Expose Render port
-EXPOSE 10000
+# Railway provides PORT env variable
+EXPOSE 8080
 
-# Start the app
-CMD ["gunicorn", "app:app"]
+# Start the app (Railway-compatible)
+CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "app:app"]

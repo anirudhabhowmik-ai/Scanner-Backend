@@ -1,53 +1,92 @@
-# routes/compress.py
-from flask import Blueprint, request, send_file, jsonify
-import tempfile
 import os
-import pikepdf
+import subprocess
+import platform
+import tempfile
+from flask import Blueprint, request, send_file, jsonify, after_this_request
 
 compress_bp = Blueprint("compress", __name__, url_prefix="/compress-pdf")
 
+# =======================
+# Detect Ghostscript path
+# =======================
+if platform.system() == "Windows":
+    # Windows: point directly to gswin64c.exe
+    GS_PATH = r"C:\Program Files\gs\gs10.06.0\bin\gswin64c.exe"
+else:
+    # Linux/Mac: use gs in PATH
+    import shutil
+    GS_PATH = shutil.which("gs")
+    if not GS_PATH:
+        raise RuntimeError("Ghostscript not found. Please install Ghostscript.")
+
+# =======================
+# Compress PDF Endpoint
+# =======================
 @compress_bp.route("/", methods=["POST"])
 def compress_pdf():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files["file"]
-    if file.filename == "":
-        return jsonify({"error": "Empty filename"}), 400
-
     input_path = None
     output_path = None
 
     try:
-        # Save uploaded PDF to temporary file
+        # Save uploaded PDF to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_input:
             file.save(tmp_input.name)
             input_path = tmp_input.name
 
-        # Temporary output file
+        # Temp output file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_output:
             output_path = tmp_output.name
 
-        # Open PDF and compress
-        with pikepdf.open(input_path) as pdf:
-            pdf.save(output_path)  # <- just save without extra arguments
+        subprocess.run(
+            [
+                GS_PATH,
+                "-sDEVICE=pdfwrite",
+                "-dCompatibilityLevel=1.4",
+                "-dDownsampleColorImages=true",
+                "-dDownsampleGrayImages=true",
+                "-dDownsampleMonoImages=true",
+                "-dColorImageResolution=100",
+                "-dGrayImageResolution=100",
+                "-dMonoImageResolution=300",
+                "-dColorImageDownsampleType=/Bicubic",
+                "-dGrayImageDownsampleType=/Bicubic",
+                "-dMonoImageDownsampleType=/Subsample",
+                "-dJPEGQ=60",
+                "-dDetectDuplicateImages=true",
+                "-dCompressFonts=true",
+                "-dSubsetFonts=true",
+                "-dNOPAUSE",
+                "-dQUIET",
+                "-dBATCH",
+                f"-sOutputFile={output_path}",
+                input_path,
+            ],
+            check=True,
+        )
 
-        # Return compressed file
+        # =======================
+        # Cleanup temp files safely (Windows-friendly)
+        # =======================
+        @after_this_request
+        def cleanup(response):
+            try:
+                for path in [input_path, output_path]:
+                    if path and os.path.exists(path):
+                        os.remove(path)
+            except Exception as e:
+                print("Cleanup error:", e)
+            return response
+
+        # Send compressed file
         return send_file(
             output_path,
             as_attachment=True,
-            download_name=f"compressed_{file.filename}"
+            download_name=f"compressed_{file.filename}",
         )
 
-    except Exception as e:
-        print("ERROR in compress_pdf:", e)
-        return jsonify({"error": str(e)}), 500
-
-    finally:
-        # Clean up temporary files
-        for path in [input_path, output_path]:
-            try:
-                if path and os.path.exists(path):
-                    os.remove(path)
-            except Exception as cleanup_error:
-                print("Cleanup error:", cleanup_error)
+    except subprocess.CalledProcessError as e:
+        return jsonify({"error": f"Compression failed: {str(e)}"}), 500
