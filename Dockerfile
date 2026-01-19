@@ -1,11 +1,11 @@
-# Use a small, official Python image
+# Use small Python image
 FROM python:3.11-slim
 
-# Prevent Python from writing .pyc files
+# Prevent .pyc files
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies (IMPORTANT)
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     ghostscript \
     tesseract-ocr \
@@ -22,11 +22,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy app code
 COPY . .
 
-# Railway provides PORT env variable
-EXPOSE 8080
+# Expose port (Railway provides PORT env)
+EXPOSE 10000
 
-# Start the app (Railway-compatible)
-CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "app:app"]
+# Start Flask app
+CMD ["python", "app.py"]
