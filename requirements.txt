@@ -10,6 +10,7 @@ reportlab==4.4.9
 
 pytesseract==0.3.10
 
-torch>=2.1.0
-torchvision>=0.16.0
-python-doctr>=0.8.1
+# Use CPU-only versions to reduce download size
+torch==2.1.0+cpu
+torchvision==0.16.0+cpu
+python-doctr==0.8.1
