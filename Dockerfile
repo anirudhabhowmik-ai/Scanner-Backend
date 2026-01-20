@@ -5,14 +5,29 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies
+# Install system dependencies + Tesseract + language packs + pngquant
 RUN apt-get update && apt-get install -y \
     ghostscript \
     tesseract-ocr \
+    tesseract-ocr-eng \
+    tesseract-ocr-ben \
+    tesseract-ocr-spa \
+    tesseract-ocr-fra \
+    tesseract-ocr-deu \
+    tesseract-ocr-ita \
+    tesseract-ocr-por \
+    tesseract-ocr-rus \
+    tesseract-ocr-jpn \
+    tesseract-ocr-kor \
+    tesseract-ocr-chi-sim \
+    tesseract-ocr-chi-tra \
+    tesseract-ocr-ara \
+    tesseract-ocr-hin \
     libtesseract-dev \
     libgl1 \
     libglib2.0-0 \
     poppler-utils \
+    pngquant \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
