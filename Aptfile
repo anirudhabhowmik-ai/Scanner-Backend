@@ -1,47 +1,23 @@
-# Core Tesseract
+# Core Tesseract OCR
 tesseract-ocr
 
-# English
+# All language packs
 tesseract-ocr-eng
-
-# Bengali
 tesseract-ocr-ben
-
-# Spanish
 tesseract-ocr-spa
-
-# French
 tesseract-ocr-fra
-
-# German
 tesseract-ocr-deu
-
-# Italian
 tesseract-ocr-ita
-
-# Portuguese
 tesseract-ocr-por
-
-# Russian
 tesseract-ocr-rus
-
-# Japanese
 tesseract-ocr-jpn
-
-# Korean
 tesseract-ocr-kor
-
-# Chinese Simplified
 tesseract-ocr-chi-sim
-
-# Chinese Traditional
 tesseract-ocr-chi-tra
-
-# Arabic
 tesseract-ocr-ara
-
-# Hindi
 tesseract-ocr-hin
 
-# PDF conversion dependency
+# PDF processing dependencies
 poppler-utils
+ghostscript
+libleptonica-dev
