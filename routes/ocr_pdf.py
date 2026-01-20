@@ -3,7 +3,6 @@ from werkzeug.utils import secure_filename
 import tempfile
 import os
 import traceback
-import platform
 import subprocess
 import ocrmypdf
 
@@ -99,10 +98,10 @@ def ocr_pdf():
         with tempfile.TemporaryDirectory() as tmp:
             input_path = os.path.join(tmp, secure_filename(file.filename))
             output_path = os.path.join(tmp, f"searchable_{secure_filename(file.filename)}")
-
             file.save(input_path)
 
             try:
+                # ⚡ Disable optimization to avoid pngquant missing error
                 ocrmypdf.ocr(
                     input_path,
                     output_path,
@@ -110,7 +109,7 @@ def ocr_pdf():
                     force_ocr=True,
                     deskew=True,
                     rotate_pages=True,
-                    optimize=3,
+                    optimize=None,  # <-- changed from 3 to None
                     pdfa=False
                 )
             except Exception as e:
