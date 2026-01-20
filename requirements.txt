@@ -4,6 +4,7 @@ numpy==1.26.4
 opencv-python-headless==4.8.1.78
 Pillow>=10.0.1
 PyPDF2==3.0.1
+pypdf
 reportlab==4.4.9
 pytesseract==0.3.10
 pikepdf>=9.10.0

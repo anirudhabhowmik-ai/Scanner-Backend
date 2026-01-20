@@ -10,11 +10,20 @@ from reportlab.lib.units import inch
 from PyPDF2 import PdfReader, PdfWriter
 import io
 import traceback
+import platform
 
 ocr_pdf_bp = Blueprint('ocr_pdf', __name__)
 
-# Configure Tesseract path if needed (uncomment for Windows)
-# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# -------------------------------
+# CONFIGURE PATHS BASED ON OS
+# -------------------------------
+if platform.system() == "Windows":
+    # Windows Tesseract path
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    POPPLER_PATH = r"C:\poppler\Library\bin"  # path to Poppler bin
+else:
+    # Linux / Railway: use system-installed binaries
+    POPPLER_PATH = None
 
 ALLOWED_EXTENSIONS = {'pdf'}
 
@@ -127,10 +136,10 @@ def ocr_pdf():
             # Convert PDF to images
             print("Converting PDF to images...")
             try:
-                images = convert_from_path(input_path, dpi=300)
+                images = convert_from_path(input_path, dpi=300, poppler_path=POPPLER_PATH)
             except Exception as e:
                 print(f"PDF conversion error: {str(e)}")
-                return jsonify({'error': 'Failed to convert PDF to images. Ensure Poppler is installed.'}), 500
+                return jsonify({'error': 'Failed to convert PDF to images. Ensure Poppler is installed and poppler_path is correct.'}), 500
             
             print(f"Processing {len(images)} pages with OCR...")
             
