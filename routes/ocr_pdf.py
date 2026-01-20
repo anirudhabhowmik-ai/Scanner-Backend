@@ -18,6 +18,26 @@ if platform.system() == "Windows":
 
 ALLOWED_EXTENSIONS = {'pdf'}
 
+# -------------------------------
+# LANGUAGE MAP (frontend -> Tesseract)
+# -------------------------------
+LANGUAGE_MAP = {
+    "eng": "eng",
+    "beng": "ben",
+    "spa": "spa",
+    "fra": "fra",
+    "deu": "deu",
+    "ita": "ita",
+    "por": "por",
+    "rus": "rus",
+    "jpn": "jpn",
+    "kor": "kor",
+    "chi_sim": "chi-sim",
+    "chi_tra": "chi-tra",
+    "ara": "ara",
+    "hin": "hin"
+}
+
 def allowed_file(filename):
     """Check if file has allowed extension"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -45,7 +65,8 @@ def ocr_pdf():
             return jsonify({'error': 'No file provided'}), 400
         
         file = request.files['file']
-        language = request.form.get('language', 'eng')
+        language_code = request.form.get('language', 'eng')
+        language = LANGUAGE_MAP.get(language_code, 'eng')  # Map to Tesseract language code
         
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
@@ -76,7 +97,7 @@ def ocr_pdf():
                 ocrmypdf.ocr(
                     input_path,
                     output_path,
-                    language=language,
+                    language=language,  # mapped Tesseract code
                     force_ocr=True,
                     output_type='pdf',
                     deskew=True
