@@ -1,10 +1,11 @@
 Flask==2.3.2
 flask-cors==3.0.10
-
 numpy==1.26.4
 opencv-python-headless==4.8.1.78
 Pillow>=10.0.1
-pypdf==3.16.0
+PyPDF2==3.0.1
 reportlab==4.4.9
 pytesseract==0.3.10
 pikepdf>=9.10.0
+pdf2image==1.16.3
+werkzeug>=2.3.0
