@@ -8,6 +8,7 @@ from routes.ocr import ocr_bp
 from routes.split import split_pdf_bp
 from routes.compress import compress_bp
 from routes.ocr_pdf import ocr_pdf_bp
+from routes.delete_pages import delete_pages_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -25,6 +26,7 @@ app.register_blueprint(ocr_bp)
 app.register_blueprint(split_pdf_bp)
 app.register_blueprint(compress_bp)
 app.register_blueprint(ocr_pdf_bp)
+app.register_blueprint(delete_pages_bp)
 
 @app.route("/", methods=["GET"])
 def health():
