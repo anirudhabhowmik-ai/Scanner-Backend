@@ -2,164 +2,80 @@ from flask import Blueprint, request, send_file, jsonify
 from werkzeug.utils import secure_filename
 import tempfile
 import os
-import traceback
-import subprocess
+import uuid
+import threading
 import ocrmypdf
+
+# Import background task dictionary and function
+from tasks import ocr_task, tasks
 
 ocr_pdf_bp = Blueprint("ocr_pdf", __name__, url_prefix="/ocr-pdf")
 
 ALLOWED_EXTENSIONS = {"pdf"}
 
-# ----------------------------------
-# LANGUAGE MAP (frontend → tesseract)
-# ----------------------------------
+# Frontend → Tesseract language mapping
 LANGUAGE_MAP = {
-    "eng": "eng",
-    "ben": "ben",
-    "spa": "spa",
-    "fra": "fra",
-    "deu": "deu",
-    "ita": "ita",
-    "por": "por",
-    "rus": "rus",
-    "jpn": "jpn",
-    "kor": "kor",
-    "chi_sim": "chi_sim",
-    "chi_tra": "chi_tra",
-    "ara": "ara",
-    "hin": "hin"
+    "eng": "eng", "ben": "ben", "spa": "spa", "fra": "fra", "deu": "deu",
+    "ita": "ita", "por": "por", "rus": "rus", "jpn": "jpn", "kor": "kor",
+    "chi_sim": "chi_sim", "chi_tra": "chi_tra", "ara": "ara", "hin": "hin"
 }
-
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def check_tesseract_languages():
-    """Return installed Tesseract language codes"""
-    try:
-        result = subprocess.run(
-            ["tesseract", "--list-langs"],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        langs = [
-            line.strip()
-            for line in result.stdout.splitlines()
-            if line.strip() and not line.lower().startswith("list of")
-        ]
-        return langs
-    except Exception:
-        return []
-
-
+# ------------------------------
+# Start OCR (async)
+# ------------------------------
 @ocr_pdf_bp.route("/", methods=["POST"])
-def ocr_pdf():
-    try:
-        # --------------------
-        # Validate upload
-        # --------------------
-        if "file" not in request.files:
-            return jsonify({"error": "No file uploaded"}), 400
+def ocr_pdf_async():
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"error": "No file uploaded"}), 400
+    if file.filename == "":
+        return jsonify({"error": "No file selected"}), 400
+    if not allowed_file(file.filename):
+        return jsonify({"error": "Only PDF files are allowed"}), 400
 
-        file = request.files["file"]
+    # Parse selected languages
+    languages_input = request.form.get("languages", "eng")
+    language_string = "+".join([LANGUAGE_MAP.get(l.strip(), l.strip()) for l in languages_input.split(",")])
 
-        if file.filename == "":
-            return jsonify({"error": "No file selected"}), 400
+    # Generate unique task ID
+    task_id = str(uuid.uuid4())
 
-        if not allowed_file(file.filename):
-            return jsonify({"error": "Only PDF files are allowed"}), 400
+    # Temporary paths
+    tmp_dir = tempfile.gettempdir()
+    input_path = os.path.join(tmp_dir, secure_filename(file.filename))
+    output_path = os.path.join(tmp_dir, f"searchable_{secure_filename(file.filename)}")
 
-        # --------------------
-        # Parse languages
-        # --------------------
-        languages_input = request.form.get("languages", "eng")
-        language_codes = [l.strip() for l in languages_input.split(",")]
-        tesseract_langs = [LANGUAGE_MAP.get(l, l) for l in language_codes]
-        language_string = "+".join(tesseract_langs)
+    # Save the uploaded PDF
+    file.save(input_path)
 
-        # --------------------
-        # Verify language packs
-        # --------------------
-        installed_langs = check_tesseract_languages()
-        missing = [l for l in tesseract_langs if l not in installed_langs]
+    # Start OCR in a background thread
+    threading.Thread(target=ocr_task, args=(task_id, input_path, output_path, language_string)).start()
 
-        if missing:
-            return jsonify({
-                "error": "Language packs not installed",
-                "missing": missing,
-                "installed": installed_langs
-            }), 400
-
-        # --------------------
-        # OCR processing
-        # --------------------
-        with tempfile.TemporaryDirectory() as tmp:
-            input_path = os.path.join(tmp, secure_filename(file.filename))
-            output_path = os.path.join(tmp, f"searchable_{secure_filename(file.filename)}")
-            file.save(input_path)
-
-            try:
-                # ⚡ Disable optimization to avoid pngquant missing error
-                ocrmypdf.ocr(
-                    input_path,
-                    output_path,
-                    language=language_string,
-                    force_ocr=True,
-                    deskew=True,
-                    rotate_pages=True,
-                    optimize=None,  # <-- changed from 3 to None
-                    pdfa=False
-                )
-            except Exception as e:
-                msg = str(e).lower()
-                if "tesseract" in msg:
-                    return jsonify({"error": "Tesseract OCR not available"}), 500
-                if "ghostscript" in msg:
-                    return jsonify({"error": "Ghostscript missing"}), 500
-                traceback.print_exc()
-                return jsonify({
-                    "error": "OCR processing failed",
-                    "details": str(e)
-                }), 500
-
-            return send_file(
-                output_path,
-                mimetype="application/pdf",
-                as_attachment=True,
-                download_name=f"searchable_{secure_filename(file.filename)}"
-            )
-
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+    # Return task_id immediately
+    return jsonify({"task_id": task_id}), 202
 
 
-@ocr_pdf_bp.route("/tesseract-check", methods=["GET"])
-def tesseract_check():
-    try:
-        version = subprocess.run(
-            ["tesseract", "--version"],
-            capture_output=True,
-            text=True
-        ).stdout.splitlines()[0]
-
-        langs = check_tesseract_languages()
-
-        return jsonify({
-            "installed": True,
-            "version": version,
-            "languages": langs,
-            "language_count": len(langs)
-        })
-    except Exception as e:
-        return jsonify({
-            "installed": False,
-            "error": str(e)
-        }), 500
+# ------------------------------
+# Check OCR status
+# ------------------------------
+@ocr_pdf_bp.route("/status/<task_id>", methods=["GET"])
+def ocr_status(task_id):
+    info = tasks.get(task_id)
+    if not info:
+        return jsonify({"error": "Invalid task id"}), 404
+    return jsonify(info)
 
 
-@ocr_pdf_bp.route("/health", methods=["GET"])
-def health():
-    return jsonify({"status": "ok", "service": "ocr-pdf"})
+# ------------------------------
+# Download processed PDF
+# ------------------------------
+@ocr_pdf_bp.route("/download/<task_id>", methods=["GET"])
+def ocr_download(task_id):
+    info = tasks.get(task_id)
+    if not info or info.get("status") != "done":
+        return jsonify({"error": "File not ready"}), 400
+    return send_file(info["output"], as_attachment=True, download_name="searchable.pdf")
