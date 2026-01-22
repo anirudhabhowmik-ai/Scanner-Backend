@@ -11,6 +11,7 @@ from routes.ocr_pdf import ocr_pdf_bp
 from routes.delete_pages import delete_pages_bp
 from routes.extract_pages import extract_pages_bp
 from routes.organize_pdf import organize_pdf_bp
+from routes.rotate_pdf import rotate_pdf_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -31,6 +32,7 @@ app.register_blueprint(ocr_pdf_bp)
 app.register_blueprint(delete_pages_bp)
 app.register_blueprint(extract_pages_bp)
 app.register_blueprint(organize_pdf_bp)
+app.register_blueprint(rotate_pdf_bp)
 
 @app.route("/", methods=["GET"])
 def health():
