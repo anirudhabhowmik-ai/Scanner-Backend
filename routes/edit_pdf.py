@@ -10,10 +10,15 @@ import numpy as np
 
 edit_pdf_bp = Blueprint('edit_pdf', __name__)
 
+# Store PDF in memory for image extraction (temporary solution)
+# In production, use proper session management or database
+pdf_cache = {}
+
 @edit_pdf_bp.route('/edit-pdf', methods=['POST'])
 def edit_pdf():
     """
     Advanced PDF editor: add text, images, shapes, and drawings
+    Properly handles edited OCR text and deleted images
     """
     try:
         if 'file' not in request.files:
@@ -42,21 +47,41 @@ def edit_pdf():
 
             page = pdf_document[page_num]
 
-            # Remove regions marked for deletion (existing text)
+            # STEP 1: Remove deleted images
+            deleted_images = page_data.get('deletedImages', [])
+            if deleted_images and len(deleted_images) > 0:
+                for img_info in deleted_images:
+                    try:
+                        # Cover image area with white rectangle
+                        shape = page.new_shape()
+                        rect = fitz.Rect(
+                            img_info['x'],
+                            img_info['y'],
+                            img_info['x'] + img_info['width'],
+                            img_info['y'] + img_info['height']
+                        )
+                        shape.draw_rect(rect)
+                        shape.finish(fill=(1, 1, 1), color=(1, 1, 1), width=0)
+                        shape.commit()
+                    except Exception as e:
+                        print(f"Error deleting image: {e}")
+
+            # STEP 2: Remove deleted text regions (original OCR text locations)
             deleted_regions = page_data.get('deletedRegions', [])
-            for region in deleted_regions:
-                rect = fitz.Rect(
-                    region['x'],
-                    region['y'],
-                    region['x'] + region['width'],
-                    region['y'] + region['height']
-                )
+            if deleted_regions and len(deleted_regions) > 0:
                 shape = page.new_shape()
-                shape.draw_rect(rect)
+                for region in deleted_regions:
+                    rect = fitz.Rect(
+                        region['x'],
+                        region['y'],
+                        region['x'] + region['width'],
+                        region['y'] + region['height']
+                    )
+                    shape.draw_rect(rect)
                 shape.finish(fill=(1, 1, 1), color=(1, 1, 1), width=0)
                 shape.commit()
 
-            # Add drawing layer if present
+            # STEP 3: Add drawing layer if present
             if 'drawing' in page_data and page_data['drawing']:
                 try:
                     drawing_data = page_data['drawing'].split(',')[1] if ',' in page_data['drawing'] else page_data['drawing']
@@ -66,7 +91,7 @@ def edit_pdf():
                 except Exception as e:
                     print(f"Error adding drawing: {e}")
 
-            # Process annotations
+            # STEP 4: Add new annotations (text, images, shapes)
             annotations = page_data.get('annotations', [])
             for annotation in annotations:
                 ann_type = annotation.get('type')
@@ -91,14 +116,15 @@ def edit_pdf():
         )
 
     except Exception as e:
+        print(f"Error in edit_pdf: {e}")
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 
 @edit_pdf_bp.route('/extract-text-ocr', methods=['POST'])
 def extract_text_ocr():
     """
-    Extract text from PDF using OCR and native text extraction
-    Returns text blocks with positions for each page
+    Extract text and images from PDF using native extraction first, then OCR as fallback
+    Returns text blocks and images with positions for each page
     """
     try:
         if 'file' not in request.files:
@@ -112,23 +138,33 @@ def extract_text_ocr():
         pdf_content = pdf_file.read()
         pdf_document = fitz.open(stream=pdf_content, filetype="pdf")
 
+        # Cache PDF for image extraction
+        pdf_id = str(hash(pdf_content))[:16]
+        pdf_cache[pdf_id] = pdf_content
+
         all_pages_data = []
 
         for page_num in range(len(pdf_document)):
             page = pdf_document[page_num]
             
-            # Try native text extraction first
+            # Extract text blocks (native first, then OCR if needed)
             text_blocks = extract_text_blocks_native(page)
             
-            # If no native text found, use OCR
-            if not text_blocks or len(text_blocks) == 0:
-                text_blocks = extract_text_blocks_ocr(page)
+            # If very little native text, use OCR
+            if len(text_blocks) < 5:
+                ocr_blocks = extract_text_blocks_ocr(page)
+                text_blocks.extend(ocr_blocks)
+            
+            # Extract images from the page
+            images = extract_images_from_page(page, page_num)
             
             all_pages_data.append({
                 "pageNum": page_num + 1,
                 "textBlocks": text_blocks,
+                "images": images,
                 "width": page.rect.width,
-                "height": page.rect.height
+                "height": page.rect.height,
+                "pdfId": pdf_id
             })
 
         pdf_document.close()
@@ -139,11 +175,68 @@ def extract_text_ocr():
         })
 
     except Exception as e:
+        print(f"Error in extract_text_ocr: {e}")
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+
+@edit_pdf_bp.route('/get-pdf-image', methods=['POST'])
+def get_pdf_image():
+    """
+    Extract a specific image from a PDF page
+    """
+    try:
+        data = request.json
+        xref = data.get('xref')
+        page_num = data.get('pageNum', 1) - 1
+        pdf_id = data.get('pdfId')
+
+        if pdf_id not in pdf_cache:
+            return jsonify({"error": "PDF not found in cache"}), 404
+
+        pdf_content = pdf_cache[pdf_id]
+        pdf_document = fitz.open(stream=pdf_content, filetype="pdf")
+
+        if page_num < 0 or page_num >= pdf_document.page_count:
+            return jsonify({"error": "Invalid page number"}), 400
+
+        page = pdf_document[page_num]
+
+        try:
+            base_image = pdf_document.extract_image(xref)
+            image_bytes = base_image["image"]
+            image_ext = base_image["ext"]
+
+            pdf_document.close()
+
+            mimetype_map = {
+                'png': 'image/png',
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'tiff': 'image/tiff',
+                'gif': 'image/gif'
+            }
+            mimetype = mimetype_map.get(image_ext, 'image/png')
+
+            return send_file(
+                BytesIO(image_bytes),
+                mimetype=mimetype
+            )
+
+        except Exception as e:
+            print(f"Error extracting image: {e}")
+            pdf_document.close()
+            return jsonify({"error": f"Failed to extract image: {str(e)}"}), 500
+
+    except Exception as e:
+        print(f"Error in get_pdf_image: {e}")
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 
 def extract_text_blocks_native(page):
-    """Extract text blocks from text-based PDF"""
+    """
+    Extract text blocks from text-based PDF
+    Returns list of text blocks with position and style information
+    """
     text_blocks = []
     
     try:
@@ -154,17 +247,23 @@ def extract_text_blocks_native(page):
                 for line in block.get("lines", []):
                     for span in line.get("spans", []):
                         text = span.get("text", "").strip()
-                        if text:
+                        if text and len(text) > 0:
                             bbox = span["bbox"]
+                            
+                            font_size = span.get("size", 12)
+                            font_name = span.get("font", "helvetica").lower()
+                            font_family = map_font_family(font_name)
+                            
                             text_blocks.append({
                                 "text": text,
                                 "x": bbox[0],
                                 "y": bbox[1],
                                 "width": bbox[2] - bbox[0],
                                 "height": bbox[3] - bbox[1],
-                                "fontSize": span.get("size", 12),
-                                "fontFamily": span.get("font", "helvetica"),
-                                "color": rgb_to_hex(span.get("color", 0))
+                                "fontSize": font_size,
+                                "fontFamily": font_family,
+                                "color": rgb_to_hex(span.get("color", 0)),
+                                "source": "native"
                             })
     except Exception as e:
         print(f"Error extracting native text: {e}")
@@ -173,7 +272,9 @@ def extract_text_blocks_native(page):
 
 
 def extract_text_blocks_ocr(page):
-    """Extract text blocks using OCR for scanned PDFs"""
+    """
+    Extract text blocks using OCR for scanned PDFs
+    """
     text_blocks = []
     
     try:
@@ -186,6 +287,7 @@ def extract_text_blocks_ocr(page):
         
         img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+        gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
         
         ocr_data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
         
@@ -200,16 +302,19 @@ def extract_text_blocks_ocr(page):
                 w = ocr_data['width'][i] / zoom
                 h = ocr_data['height'][i] / zoom
                 
+                estimated_font_size = max(8, h * 0.8)
+                
                 text_blocks.append({
                     "text": text,
                     "x": x,
                     "y": y,
                     "width": w,
                     "height": h,
-                    "fontSize": h * 0.8,
+                    "fontSize": estimated_font_size,
                     "fontFamily": "helvetica",
                     "color": "#000000",
-                    "confidence": conf
+                    "confidence": conf,
+                    "source": "ocr"
                 })
     
     except Exception as e:
@@ -218,10 +323,66 @@ def extract_text_blocks_ocr(page):
     return text_blocks
 
 
+def extract_images_from_page(page, page_num):
+    """
+    Extract embedded images from PDF page
+    """
+    images = []
+    
+    try:
+        image_list = page.get_images(full=True)
+        
+        for img_index, img_info in enumerate(image_list):
+            xref = img_info[0]
+            rects = page.get_image_rects(xref)
+            
+            if rects:
+                for rect in rects:
+                    images.append({
+                        "xref": xref,
+                        "x": rect.x0,
+                        "y": rect.y0,
+                        "width": rect.width,
+                        "height": rect.height,
+                        "index": img_index,
+                        "pageNum": page_num + 1
+                    })
+    
+    except Exception as e:
+        print(f"Error extracting images: {e}")
+    
+    return images
+
+
+def map_font_family(font_name):
+    """
+    Map PDF font names to common web font families
+    """
+    font_name = font_name.lower()
+    
+    if 'arial' in font_name or 'helvetica' in font_name or 'sans' in font_name:
+        return 'Arial'
+    elif 'times' in font_name or 'roman' in font_name or 'serif' in font_name:
+        return 'Times New Roman'
+    elif 'courier' in font_name or 'mono' in font_name:
+        return 'Courier New'
+    elif 'georgia' in font_name:
+        return 'Georgia'
+    elif 'verdana' in font_name:
+        return 'Verdana'
+    else:
+        return 'Arial'
+
+
 def add_text_annotation(page, annotation):
-    """Add text annotation to PDF page"""
+    """
+    Add text annotation to PDF page with proper font styling
+    """
     try:
         text = annotation.get('text', '')
+        if not text:
+            return
+            
         x = float(annotation.get('x', 0))
         y = float(annotation.get('y', 0))
         font_size = int(annotation.get('fontSize', 12))
@@ -236,11 +397,13 @@ def add_text_annotation(page, annotation):
             'arial': 'helv',
             'helvetica': 'helv',
             'times new roman': 'times',
+            'times': 'times',
             'courier new': 'courier',
             'courier': 'courier',
             'georgia': 'times',
             'verdana': 'helv'
         }
+        
         font = font_map.get(font_family, 'helv')
 
         if font_weight == 'bold' and font_style == 'italic':
@@ -251,6 +414,7 @@ def add_text_annotation(page, annotation):
             font = font + '-oblique'
 
         point = fitz.Point(x, y + font_size)
+        
         page.insert_text(
             point,
             text,
@@ -264,18 +428,33 @@ def add_text_annotation(page, annotation):
 
 
 def add_image_annotation(page, annotation):
-    """Add image annotation to PDF page"""
+    """
+    Add image annotation to PDF page
+    """
     try:
         image_data = annotation.get('imageData', '')
+        if not image_data:
+            return
+            
         x = float(annotation.get('x', 0))
         y = float(annotation.get('y', 0))
         width = float(annotation.get('width', 100))
         height = float(annotation.get('height', 100))
 
-        if ',' in image_data:
-            image_data = image_data.split(',')[1]
+        if image_data.startswith('data:'):
+            if ',' in image_data:
+                image_data = image_data.split(',')[1]
+            image_bytes = base64.b64decode(image_data)
+        elif image_data.startswith('blob:'):
+            print("Warning: Cannot process blob URLs")
+            return
+        else:
+            try:
+                image_bytes = base64.b64decode(image_data)
+            except:
+                print("Error: Invalid image data format")
+                return
         
-        image_bytes = base64.b64decode(image_data)
         rect = fitz.Rect(x, y, x + width, y + height)
         page.insert_image(rect, stream=image_bytes)
 
@@ -284,7 +463,9 @@ def add_image_annotation(page, annotation):
 
 
 def add_shape_annotation(page, annotation):
-    """Add shape annotation to PDF page"""
+    """
+    Add shape annotation (rectangle, circle, line) to PDF page
+    """
     try:
         shape_type = annotation.get('shapeType', 'rectangle')
         x = float(annotation.get('x', 0))
@@ -326,16 +507,23 @@ def add_shape_annotation(page, annotation):
 
 
 def hex_to_rgb(hex_color):
-    """Convert hex color to RGB tuple (0-1 range)"""
-    hex_color = hex_color.lstrip('#')
-    r = int(hex_color[0:2], 16) / 255.0
-    g = int(hex_color[2:4], 16) / 255.0
-    b = int(hex_color[4:6], 16) / 255.0
-    return (r, g, b)
+    """
+    Convert hex color to RGB tuple (0-1 range) for PyMuPDF
+    """
+    try:
+        hex_color = hex_color.lstrip('#')
+        r = int(hex_color[0:2], 16) / 255.0
+        g = int(hex_color[2:4], 16) / 255.0
+        b = int(hex_color[4:6], 16) / 255.0
+        return (r, g, b)
+    except:
+        return (0, 0, 0)
 
 
 def rgb_to_hex(rgb_int):
-    """Convert PyMuPDF RGB integer to hex color"""
+    """
+    Convert PyMuPDF RGB integer to hex color string
+    """
     try:
         if isinstance(rgb_int, int):
             r = (rgb_int >> 16) & 0xFF
