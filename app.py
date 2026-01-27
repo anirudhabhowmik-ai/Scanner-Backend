@@ -14,6 +14,7 @@ from routes.organize_pdf import organize_pdf_bp
 from routes.rotate_pdf import rotate_pdf_bp
 from routes.add_page_numbers import add_page_numbers_bp
 from routes.edit_pdf import edit_pdf_bp
+from routes.add_watermark import add_watermark_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -37,6 +38,7 @@ app.register_blueprint(organize_pdf_bp)
 app.register_blueprint(rotate_pdf_bp)
 app.register_blueprint(add_page_numbers_bp)
 app.register_blueprint(edit_pdf_bp)
+app.register_blueprint(add_watermark_bp)
 
 @app.route("/", methods=["GET"])
 def health():
