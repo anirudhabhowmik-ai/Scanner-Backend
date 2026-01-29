@@ -1,12 +1,22 @@
 # Use small Python image
 FROM python:3.11-slim
 
-# Prevent .pyc files
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies + Tesseract + language packs + pngquant
+# Install system dependencies + LibreOffice + Tesseract + fonts
 RUN apt-get update && apt-get install -y \
+    libreoffice \
+    libreoffice-calc \
+    libreoffice-writer \
+    libreoffice-core \
+    libreoffice-common \
+    libreoffice-java-common \
+    default-jre \
+    fonts-dejavu \
+    fonts-liberation \
+    fonts-noto \
+    fonts-noto-cjk \
     ghostscript \
     tesseract-ocr \
     tesseract-ocr-eng \
@@ -30,18 +40,13 @@ RUN apt-get update && apt-get install -y \
     pngquant \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app code
 COPY . .
 
-# Expose port (Railway provides PORT env)
 EXPOSE 10000
 
-# Start Flask app
 CMD ["python", "app.py"]
