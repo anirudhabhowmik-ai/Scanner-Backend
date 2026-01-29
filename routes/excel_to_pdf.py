@@ -2,6 +2,7 @@ from flask import Blueprint, request, send_file, jsonify
 import subprocess
 import os
 import uuid
+from PyPDF2 import PdfMerger
 
 excel_to_pdf_bp = Blueprint("excel_to_pdf", __name__)
 
@@ -11,7 +12,7 @@ def excel_to_pdf():
         return jsonify({"error": "No files uploaded"}), 400
 
     files = request.files.getlist("files")
-    output_files = []
+    temp_pdf_paths = []
 
     try:
         for file in files:
@@ -29,13 +30,25 @@ def excel_to_pdf():
             ], check=True)
 
             pdf_path = input_path.rsplit(".", 1)[0] + ".pdf"
-            output_files.append(pdf_path)
+            temp_pdf_paths.append(pdf_path)
 
-        # Return single PDF if only one
-        if len(output_files) == 1:
-            return send_file(output_files[0], as_attachment=True)
+        # Merge PDFs if multiple
+        if len(temp_pdf_paths) > 1:
+            merged_pdf_path = f"/tmp/{uuid.uuid4()}_merged.pdf"
+            merger = PdfMerger()
+            for pdf in temp_pdf_paths:
+                merger.append(pdf)
+            merger.write(merged_pdf_path)
+            merger.close()
 
-        return jsonify({"message": "Multiple PDFs generated", "files": output_files}), 200
+            # Cleanup individual PDFs
+            for pdf in temp_pdf_paths:
+                os.remove(pdf)
+
+            return send_file(merged_pdf_path, as_attachment=True, download_name="converted.pdf")
+
+        # Single PDF
+        return send_file(temp_pdf_paths[0], as_attachment=True, download_name="converted.pdf")
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
