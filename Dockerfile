@@ -1,10 +1,8 @@
-# Use small Python image
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies + LibreOffice + Tesseract + fonts
 RUN apt-get update && apt-get install -y \
     libreoffice \
     libreoffice-calc \
@@ -38,6 +36,8 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     poppler-utils \
     pngquant \
+    qpdf \
+    unpaper \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

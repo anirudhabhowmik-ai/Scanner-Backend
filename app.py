@@ -22,6 +22,7 @@ from routes.excel_to_pdf import excel_to_pdf_bp
 from routes.word_to_pdf import word_to_pdf_bp
 from routes.ppt_to_pdf import ppt_to_pdf_bp
 # from routes.html_to_pdf import html_to_pdf_bp
+from routes.pdfa_ocr import pdfa_ocr_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -53,6 +54,7 @@ app.register_blueprint(excel_to_pdf_bp)
 app.register_blueprint(word_to_pdf_bp)
 app.register_blueprint(ppt_to_pdf_bp)
 # app.register_blueprint(html_to_pdf_bp)
+app.register_blueprint(pdfa_ocr_bp)
 
 @app.route("/", methods=["GET"])
 def health():
