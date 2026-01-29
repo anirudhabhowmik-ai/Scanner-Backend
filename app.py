@@ -17,6 +17,7 @@ from routes.edit_pdf import edit_pdf_bp
 from routes.add_watermark import add_watermark_bp
 from routes.crop_pdf import crop_pdf_bp
 from routes.compress_image import compress_image_bp
+from routes.image_to_pdf import image_to_pdf_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -43,6 +44,7 @@ app.register_blueprint(edit_pdf_bp)
 app.register_blueprint(add_watermark_bp)
 app.register_blueprint(crop_pdf_bp)
 app.register_blueprint(compress_image_bp)
+app.register_blueprint(image_to_pdf_bp)
 
 @app.route("/", methods=["GET"])
 def health():
