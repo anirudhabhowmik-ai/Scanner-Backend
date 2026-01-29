@@ -20,6 +20,7 @@ from routes.compress_image import compress_image_bp
 from routes.image_to_pdf import image_to_pdf_bp
 from routes.excel_to_pdf import excel_to_pdf_bp
 from routes.word_to_pdf import word_to_pdf_bp
+from routes.ppt_to_pdf import ppt_to_pdf_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -49,7 +50,7 @@ app.register_blueprint(compress_image_bp)
 app.register_blueprint(image_to_pdf_bp)
 app.register_blueprint(excel_to_pdf_bp)
 app.register_blueprint(word_to_pdf_bp)
-
+app.register_blueprint(ppt_to_pdf_bp)
 
 @app.route("/", methods=["GET"])
 def health():
