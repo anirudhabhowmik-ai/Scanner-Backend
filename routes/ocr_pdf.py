@@ -98,18 +98,24 @@ def ocr_pdf():
             file.save(input_path)
 
             try:
+                # KEY FIX: Use parameters that guarantee text selection
                 ocrmypdf.ocr(
                     input_path,
                     output_path,
                     language=language_string,
-                    force_ocr=True,        # force OCR even if PDF has text
-                    deskew=True,           # straighten pages
-                    rotate_pages=True,     # auto rotate
-                    clean=True,            # improve text extraction
-                    optimize=1,            # safe optimization
-                    output_type="pdf",     # ensure PDF with text layer
-                    pdfa=False,            # don't force PDF/A
-                    skip_text=False        # ensure text layer is written
+                    force_ocr=True,           # run OCR on all pages
+                    deskew=True,              # auto-rotate / deskew pages
+                    rotate_pages=True,        # auto-rotate pages
+                    clean=True,               # clean pages before OCR (IMPORTANT)
+                    remove_background=False,  # keep original quality
+                    optimize=0,               # NO optimization to preserve text (CRITICAL)
+                    output_type="pdf",        # standard PDF
+                    skip_text=False,          # don't skip existing text
+                    redo_ocr=False,           # don't redo if text exists
+                    sidecar=None,             # no text file needed
+                    pdf_renderer="auto",      # let ocrmypdf choose best renderer
+                    invalidate_digital_signatures=True,  # allow processing signed PDFs
+                    tesseract_timeout=300     # 5 min timeout per page
                 )
             except Exception as e:
                 msg = str(e).lower()

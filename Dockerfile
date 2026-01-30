@@ -72,11 +72,31 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 🔥🔥🔥 REAL FIX — Debian Bookworm path
+# 🔥🔥🔥 CRITICAL FIXES FOR SELECTABLE TEXT 🔥🔥🔥
+
+# 1. Debian Bookworm tesseract path
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 
-# Prevent LibreOffice profile corruption
+# 2. FIX GHOSTSCRIPT PERMISSIONS (CRITICAL for OCR text layer)
+# By default, Ghostscript has security restrictions that prevent
+# reading/writing certain file types. We need to relax these for OCR.
+RUN sed -i 's/<policy domain="coder" rights="none" pattern="PDF" \/>/<policy domain="coder" rights="read|write" pattern="PDF" \/>/g' /etc/ImageMagick-6/policy.xml || true
+
+# Alternative fix if the above doesn't work:
+RUN if [ -f /etc/ghostscript/cidfmap ]; then \
+        echo "Ghostscript found"; \
+    fi && \
+    # Remove PDF security restrictions
+    sed -i '/pattern="PDF"/d' /etc/ImageMagick-6/policy.xml 2>/dev/null || true && \
+    sed -i '/pattern="PS"/d' /etc/ImageMagick-6/policy.xml 2>/dev/null || true && \
+    sed -i '/pattern="EPS"/d' /etc/ImageMagick-6/policy.xml 2>/dev/null || true
+
+# 3. Prevent LibreOffice profile corruption
 ENV HOME=/tmp
+
+# 4. Ensure proper locale for text encoding
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
 # ---------------- APP SETUP ----------------
 WORKDIR /app
@@ -86,5 +106,11 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+# Verify installations
+RUN tesseract --version && \
+    gs --version && \
+    ocrmypdf --version && \
+    echo "All OCR tools installed successfully"
 
 CMD gunicorn --bind 0.0.0.0:$PORT app:app
