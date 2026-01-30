@@ -14,10 +14,19 @@ RUN apt-get update && apt-get install -y \
     libreoffice \
     libreoffice-calc \
     libreoffice-writer \
+    libreoffice-impress \
     libreoffice-core \
     libreoffice-common \
     libreoffice-java-common \
     default-jre \
+
+    # 🔥 REQUIRED so LibreOffice works in Docker headless
+    libxinerama1 \
+    libxrender1 \
+    libfontconfig1 \
+    libcups2 \
+    libsm6 \
+    libice6 \
 
     # Fonts
     fonts-dejavu \
@@ -25,7 +34,7 @@ RUN apt-get update && apt-get install -y \
     fonts-noto \
     fonts-noto-cjk \
 
-    # PDF + OCR tools (REQUIRED BY OCRmyPDF)
+    # PDF + OCR tools
     ghostscript \
     qpdf \
     poppler-utils \
@@ -50,7 +59,7 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-chi-tra \
     tesseract-ocr-ara \
 
-    # Script detection (auto language detection help)
+    # Script detection
     tesseract-ocr-script-latn \
     tesseract-ocr-script-deva \
 
@@ -63,8 +72,11 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 🔥 CRITICAL — without this OCRmyPDF cannot find language files
-ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata
+# 🔥🔥🔥 REAL FIX — Debian Bookworm path
+ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+
+# Prevent LibreOffice profile corruption
+ENV HOME=/tmp
 
 # ---------------- APP SETUP ----------------
 WORKDIR /app
@@ -75,5 +87,4 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY . .
 
-# Railway dynamic port support
 CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "app:app"]
