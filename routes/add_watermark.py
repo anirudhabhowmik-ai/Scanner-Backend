@@ -5,20 +5,13 @@ from reportlab.lib.colors import Color
 from reportlab.lib.utils import ImageReader
 from io import BytesIO
 from PIL import Image
-import json
 
 add_watermark_bp = Blueprint('add_watermark', __name__)
 
 @add_watermark_bp.route("/add-watermark", methods=["POST"])
 def add_watermark():
     """
-    Add watermark to PDF files with advanced options:
-    - Text or Image watermarks
-    - Custom positioning per page
-    - Text styling (bold, italic, underline)
-    - Rotation support
-    - Page range selection
-    - Image resizing
+    Add watermark to PDF files using simple position dropdown
     """
     try:
         # Get uploaded files
@@ -34,6 +27,8 @@ def add_watermark():
         rotation_deg = int(request.form.get("rotation", 0))
         font_family = request.form.get("fontFamily", "Helvetica")
         text_color = request.form.get("color", "#000000")
+        position_name = request.form.get("position", "center")
+        image_size_percent = float(request.form.get("imageSize", 15))
         
         # Text styling options
         is_bold = request.form.get("bold", "false").lower() == "true"
@@ -43,10 +38,6 @@ def add_watermark():
         # Page range
         page_start = int(request.form.get("pageStart", 1))
         page_end = int(request.form.get("pageEnd", 0))
-        
-        # Position data for each page (JSON array)
-        positions_json = request.form.get("positions", "[]")
-        positions = json.loads(positions_json)
         
         # Image file (if image watermark)
         image_file = request.files.get("image")
@@ -91,7 +82,6 @@ def add_watermark():
             try:
                 image_file.seek(0)
                 img = Image.open(image_file)
-                # Convert to RGB if necessary
                 if img.mode not in ('RGB', 'RGBA'):
                     img = img.convert('RGBA')
                 image_data = img
@@ -104,18 +94,6 @@ def add_watermark():
             
             # Check if watermark should be applied to this page
             if current_page_num < page_start or current_page_num > page_end:
-                output_writer.add_page(page)
-                continue
-            
-            # Find position data for this page
-            page_position = None
-            for pos in positions:
-                if pos.get("pageNum") == current_page_num:
-                    page_position = pos
-                    break
-            
-            # Skip if no position data found
-            if not page_position:
                 output_writer.add_page(page)
                 continue
             
@@ -132,11 +110,12 @@ def add_watermark():
                 is_bold=is_bold,
                 is_italic=is_italic,
                 is_underline=is_underline,
-                page_position=page_position,
+                position_name=position_name,
+                image_size_percent=image_size_percent,
                 image_data=image_data
             )
             
-            # Merge watermark with page (always over content)
+            # Merge watermark with page
             page.merge_page(watermark_page)
             output_writer.add_page(page)
 
@@ -159,36 +138,29 @@ def add_watermark():
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
-def parse_position_value(value_str, max_dimension):
+def get_position_coordinates(position_name):
     """
-    Parse position value which can be:
-    - Percentage string like "50%"
-    - Pixel string like "120px"
-    - Plain number
-    Returns the actual position in points
+    Get X,Y percentages for predefined positions
     """
-    if isinstance(value_str, (int, float)):
-        return float(value_str)
-    
-    value_str = str(value_str).strip()
-    
-    if "%" in value_str:
-        # Percentage value
-        percent = float(value_str.replace("%", ""))
-        return (percent / 100) * max_dimension
-    elif "px" in value_str:
-        # Pixel value - treat as points (1:1 for screen to PDF)
-        return float(value_str.replace("px", ""))
-    else:
-        # Plain number
-        return float(value_str)
+    positions = {
+        'center': (50, 50),
+        'top-left': (15, 15),
+        'top-center': (50, 15),
+        'top-right': (85, 15),
+        'middle-left': (15, 50),
+        'middle-right': (85, 50),
+        'bottom-left': (15, 85),
+        'bottom-center': (50, 85),
+        'bottom-right': (85, 85)
+    }
+    return positions.get(position_name, (50, 50))
 
 
 def create_watermark_page(page, wm_type, text, font_size, opacity, rotation_deg, 
                          font_family, text_color, is_bold, is_italic, is_underline, 
-                         page_position, image_data):
+                         position_name, image_size_percent, image_data):
     """
-    Create a watermark overlay for a single page
+    Create a watermark overlay for a single page using position dropdown
     """
     packet = BytesIO()
     width = float(page.mediabox.width)
@@ -203,48 +175,34 @@ def create_watermark_page(page, wm_type, text, font_size, opacity, rotation_deg,
     c.setFillColor(Color(r/255, g/255, b/255, alpha=opacity))
     c.setStrokeColor(Color(r/255, g/255, b/255, alpha=opacity))
 
-    # Parse position values
-    left_str = page_position.get("left", "50%")
-    top_str = page_position.get("top", "50%")
+    # Get position percentages
+    x_percent, y_percent = get_position_coordinates(position_name)
     
-    # Convert to actual positions
-    x = parse_position_value(left_str, width)
-    
-    # For top, we need to convert from top-based (HTML) to bottom-based (PDF) coordinates
-    top_value = parse_position_value(top_str, height)
-    y = height - top_value
-    
-    # Get rotation from position data (or use global rotation)
-    page_rotation = float(page_position.get("rotation", rotation_deg))
+    # Convert to PDF coordinates (bottom-left origin)
+    x = (x_percent / 100) * width
+    y = height - ((y_percent / 100) * height)  # Flip Y axis
     
     if wm_type == "image" and image_data:
         # Image watermark
-        img_width = page_position.get("width", 150)
-        
-        # Calculate height maintaining aspect ratio
+        img_width = (image_size_percent / 100) * width
         aspect_ratio = image_data.height / image_data.width
         img_height = img_width * aspect_ratio
         
         c.saveState()
         c.translate(x, y)
-        c.rotate(page_rotation)
+        c.rotate(rotation_deg)
         
         try:
-            # Convert PIL Image to ImageReader for reportlab
             img_buffer = BytesIO()
-            
-            # Save with proper format
             if image_data.mode == 'RGBA':
-                # For RGBA images, save as PNG to preserve transparency
                 image_data.save(img_buffer, format='PNG')
             else:
-                # For RGB images, can use JPEG or PNG
                 image_data.save(img_buffer, format='PNG')
             
             img_buffer.seek(0)
             img_reader = ImageReader(img_buffer)
             
-            # Draw image centered at origin with alpha support
+            # Draw image centered at position
             c.drawImage(
                 img_reader,
                 -img_width/2,
@@ -263,21 +221,18 @@ def create_watermark_page(page, wm_type, text, font_size, opacity, rotation_deg,
         
     elif wm_type == "text" and text:
         # Text watermark
-        
-        # Determine font based on family and styling
         font = get_font_name(font_family, is_bold, is_italic)
-        
         c.setFont(font, font_size)
         
         c.saveState()
         c.translate(x, y)
-        c.rotate(page_rotation)
+        c.rotate(rotation_deg)
         
         # Calculate text dimensions
         text_width = c.stringWidth(text, font, font_size)
         text_height = font_size
         
-        # Draw text centered at origin
+        # Draw text centered at position
         c.drawString(-text_width/2, -text_height/3, text)
         
         # Add underline if requested
@@ -290,7 +245,6 @@ def create_watermark_page(page, wm_type, text, font_size, opacity, rotation_deg,
     c.save()
     packet.seek(0)
     
-    # Return the watermark page
     watermark_reader = PdfReader(packet)
     return watermark_reader.pages[0]
 
@@ -326,7 +280,6 @@ def get_font_name(font_family, is_bold, is_italic):
         }
     }
     
-    # Default to Helvetica if font family not found
     family_fonts = font_map.get(font_family, font_map["Helvetica"])
     return family_fonts.get((is_bold, is_italic), "Helvetica")
 
