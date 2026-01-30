@@ -30,10 +30,8 @@ LANGUAGE_MAP = {
     "hin": "hin"
 }
 
-
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-
 
 def check_tesseract_languages():
     """Return installed Tesseract language codes"""
@@ -52,7 +50,6 @@ def check_tesseract_languages():
         return langs
     except Exception:
         return []
-
 
 @ocr_pdf_bp.route("/", methods=["POST"])
 def ocr_pdf():
@@ -101,16 +98,18 @@ def ocr_pdf():
             file.save(input_path)
 
             try:
-                # ⚡ Disable optimization to avoid pngquant missing error
                 ocrmypdf.ocr(
                     input_path,
                     output_path,
                     language=language_string,
-                    force_ocr=True,
-                    deskew=True,
-                    rotate_pages=True,
-                    optimize=None,  # <-- changed from 3 to None
-                    pdfa=False
+                    force_ocr=True,        # force OCR even if PDF has text
+                    deskew=True,           # straighten pages
+                    rotate_pages=True,     # auto rotate
+                    clean=True,            # improve text extraction
+                    optimize=1,            # safe optimization
+                    output_type="pdf",     # ensure PDF with text layer
+                    pdfa=False,            # don't force PDF/A
+                    skip_text=False        # ensure text layer is written
                 )
             except Exception as e:
                 msg = str(e).lower()
@@ -135,7 +134,6 @@ def ocr_pdf():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-
 @ocr_pdf_bp.route("/tesseract-check", methods=["GET"])
 def tesseract_check():
     try:
@@ -158,7 +156,6 @@ def tesseract_check():
             "installed": False,
             "error": str(e)
         }), 500
-
 
 @ocr_pdf_bp.route("/health", methods=["GET"])
 def health():
