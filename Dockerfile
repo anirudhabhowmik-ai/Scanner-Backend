@@ -4,9 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ---------- SYSTEM DEPENDENCIES ----------
+# ---------------- SYSTEM DEPENDENCIES ----------------
 RUN apt-get update && apt-get install -y \
-    # Core utilities
     curl \
     ca-certificates \
     build-essential \
@@ -20,18 +19,19 @@ RUN apt-get update && apt-get install -y \
     libreoffice-java-common \
     default-jre \
 
-    # Fonts (important for PDF rendering)
+    # Fonts
     fonts-dejavu \
     fonts-liberation \
     fonts-noto \
     fonts-noto-cjk \
 
-    # PDF + OCR tools
+    # PDF + OCR tools (REQUIRED BY OCRmyPDF)
     ghostscript \
     qpdf \
     poppler-utils \
     unpaper \
     pngquant \
+    ocrmypdf \
 
     # Tesseract OCR + Languages
     tesseract-ocr \
@@ -50,7 +50,7 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-chi-tra \
     tesseract-ocr-ara \
 
-    # Script detection support
+    # Script detection (auto language detection help)
     tesseract-ocr-script-latn \
     tesseract-ocr-script-deva \
 
@@ -63,20 +63,17 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# ---------- APP SETUP ----------
+# 🔥 CRITICAL — without this OCRmyPDF cannot find language files
+ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata
+
+# ---------------- APP SETUP ----------------
 WORKDIR /app
 
 COPY requirements.txt .
-
-# Install Python deps
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Railway uses PORT env variable
-ENV PORT=10000
-
-EXPOSE 10000
-
-CMD ["python", "app.py"]
+# Railway dynamic port support
+CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "app:app"]
