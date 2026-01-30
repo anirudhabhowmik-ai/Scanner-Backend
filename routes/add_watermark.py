@@ -159,6 +159,31 @@ def add_watermark():
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
+def parse_position_value(value_str, max_dimension):
+    """
+    Parse position value which can be:
+    - Percentage string like "50%"
+    - Pixel string like "120px"
+    - Plain number
+    Returns the actual position in points
+    """
+    if isinstance(value_str, (int, float)):
+        return float(value_str)
+    
+    value_str = str(value_str).strip()
+    
+    if "%" in value_str:
+        # Percentage value
+        percent = float(value_str.replace("%", ""))
+        return (percent / 100) * max_dimension
+    elif "px" in value_str:
+        # Pixel value - treat as points (1:1 for screen to PDF)
+        return float(value_str.replace("px", ""))
+    else:
+        # Plain number
+        return float(value_str)
+
+
 def create_watermark_page(page, wm_type, text, font_size, opacity, rotation_deg, 
                          font_family, text_color, is_bold, is_italic, is_underline, 
                          page_position, image_data):
@@ -178,29 +203,16 @@ def create_watermark_page(page, wm_type, text, font_size, opacity, rotation_deg,
     c.setFillColor(Color(r/255, g/255, b/255, alpha=opacity))
     c.setStrokeColor(Color(r/255, g/255, b/255, alpha=opacity))
 
-    # Calculate position from percentage or pixels
+    # Parse position values
     left_str = page_position.get("left", "50%")
     top_str = page_position.get("top", "50%")
     
-    # Handle both percentage and pixel values
-    if isinstance(left_str, str):
-        if "%" in left_str:
-            left_pct = float(left_str.replace("%", ""))
-            x = (left_pct / 100) * width
-        else:
-            x = float(left_str.replace("px", ""))
-    else:
-        x = float(left_str)
+    # Convert to actual positions
+    x = parse_position_value(left_str, width)
     
-    if isinstance(top_str, str):
-        if "%" in top_str:
-            top_pct = float(top_str.replace("%", ""))
-            # Convert from top-based to bottom-based coordinate system
-            y = height - ((top_pct / 100) * height)
-        else:
-            y = height - float(top_str.replace("px", ""))
-    else:
-        y = height - float(top_str)
+    # For top, we need to convert from top-based (HTML) to bottom-based (PDF) coordinates
+    top_value = parse_position_value(top_str, height)
+    y = height - top_value
     
     # Get rotation from position data (or use global rotation)
     page_rotation = float(page_position.get("rotation", rotation_deg))
